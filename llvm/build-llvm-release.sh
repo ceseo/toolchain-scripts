@@ -5,7 +5,7 @@ if [ "$#" -lt 2 ]; then
     echo "Valid toolchain options are: gnu or llvm."
 	echo "Valid release option is the major RELEASE number."
 	echo "  i.e. look at the branches in the llvm-project repo for: origin/release/RELEASE.x"
-	echo "Valid (optional) build type options are: Release, RelWithAssertions and Debug."
+	echo "Valid (optional) build type options are: Release and Debug."
 	echo "  Default build type is Release."
     exit 1
 fi
@@ -42,8 +42,10 @@ if [ "${BUILDTC}" = "llvm" ]; then
 	# Xcode default toolchain doesn't include lld
 	if [ "${OS}" = "Darwin" ]; then
 		LD="${TCPATH}/ld"
+		LLVM_ENABLE_LLD="OFF"
 	else
 		LD="${TCPATH}/ld.lld"
+		LLVM_ENABLE_LLD="ON"
 	fi
 elif [ "${BUILDTC}" = "gnu" ]; then
 	if [ "${OS}" = "Darwin" ]; then
@@ -56,6 +58,7 @@ elif [ "${BUILDTC}" = "gnu" ]; then
     CC="${TCPATH}/${TRIPLE}-gcc"
     CXX="${TCPATH}/${TRIPLE}-g++"
     LD="${TCPATH}/${TRIPLE}-ld"
+	LLVM_ENABLE_LLD="OFF"
 else
     echo "Invalid toolchain option."
     exit 1
@@ -109,11 +112,6 @@ mkdir -p ${BUILDDIR}
 cd ${BUILDDIR}
 
 # Execute the build. Using Ninja as default.
-if [ "${OS}" = "Darwin" ]; then
-	LLVM_ENABLE_LLD="OFF"
-else
-	LLVM_ENABLE_LLD="ON"
-fi
 ENABLE_CCACHE="`which ccache`"
 if [ ! -z "${ENABLE_CCACHE}" ]; then
 	ENABLE_CCACHE="-DCMAKE_C_COMPILER_LAUNCHER=ccache"
