@@ -1,10 +1,11 @@
 #!/bin/bash
 
-if [ "$#" -lt 1 ]; then
-    echo "Usage: $0 [toolchain] [build type]"
+if [ "$#" -lt 2 ]; then
+    echo "Usage: $0 [toolchain] [stage] [build type]"
     echo "Valid toolchain options are: gnu or llvm."
-	echo "Valid (optional) build type options are: Release and Debug."
-	echo "  Default build type is Release."
+    echo "Valid stage options are: stage1 or stage2."
+    echo "Valid (optional) build type options are: Release and Debug."
+    echo "  Default build type is Release."
     exit 1
 fi
 
@@ -53,28 +54,37 @@ elif [ "${BUILDTC}" = "gnu" ]; then
     CC="${TCPATH}/${TRIPLE}-gcc"
     CXX="${TCPATH}/${TRIPLE}-g++"
     LD="${TCPATH}/${TRIPLE}-ld"
-	LLVM_ENABLE_LLD="OFF"
+    LLVM_ENABLE_LLD="OFF"
 else
     echo "Invalid toolchain option."
     exit 1
 fi
 
+# Check if it's a stage2 build
+STAGE="$2"
+ENABLE_BOOTSTRAP="Off"
+NINJA="ninja"
+if [ "${STAGE}" = "stage2" ]; then
+    ENABLE_BOOTSTRAP="On"
+    NINJA="ninja stage2"
+fi
+
 # Check build type
-if [ -z "$2" ]; then
+if [ -z "$3" ]; then
 	BUILD_TYPE="Release"
 else
-	BUILD_TYPE="$2"
+	BUILD_TYPE="$3"
 fi
 
 TARGETS="AArch64"
-PROJECTS="lld;flang;mlir;clang;llvm;clang-tools-extra;openmp"
-RUNTIMES="compiler-rt"
+PROJECTS="lld;mlir;clang;flang;llvm;clang-tools-extra"
+RUNTIMES="compiler-rt;flang-rt;openmp"
 INSTALL_PREFIX="${HOME}/.local/llvm-head"	# Change to desired installation path.
 CXX_STD="17"
 
 # Set test targets here
 TEST_TARGETS=""
-#declare -a TEST_TARGETS=("clang" "flang" "compiler-rt" "openmp")
+declare -a TEST_TARGETS=("clang" "compiler-rt" "mlir" "lld")
 
 # Check if an old build exists and erase it.
 if [ -d "${BUILDDIR}" ]; then
@@ -107,6 +117,7 @@ echo "--------------------------------------------------"
 echo "Starting llvm build..."
 echo "--------------------------------------------------"
 echo "Build type: ${BUILD_TYPE}"
+echo "Build stages: ${STAGE}"
 echo "Build directory: ${BUILDDIR}"
 echo "Install directory: ${INSTALL_PREFIX}"
 echo "Toolchain: ${BUILDTC} in ${TCPATH}"
@@ -140,6 +151,7 @@ cmake -G Ninja \
       -DBOLT_CLANG_EXE="${CC}" \
 	  "${ENABLE_CCACHE}" \
 	  "${ENABLE_CCACHEXX}" \
+      "${ENABLE_BOOTSTRAP}" \
       ../llvm > _cmake_log 2>&1
 if [ $? -ne 0 ]; then
     echo "Error running cmake. Check ${BUILDDIR}/_cmake_log."
