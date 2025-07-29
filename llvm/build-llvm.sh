@@ -28,31 +28,50 @@ fi
 
 # Check toolchain
 BUILDTC="$1"
-GNUTC="${HOME}/.local/gnu-latest/bin"		# Change to desired gcc path.
-LLVMTC="${HOME}/.local/llvm-latest/bin"		# Change to desired clang path.
+GNUTC="${HOME}/.local/gnu-current/bin"       # Change to desired gcc path.
+LLVMTC="${HOME}/.local/llvm-current/bin"     # Change to desired clang path.
+CCACHE="no"                                  # Toggle to use ccache or not.
+
+if [ "${CCACHE}" = "yes" ]; then
+    if [ -z "`which ccache`" ]; then
+        echo "ccache not found. Please install ccache or set CCACHE to 'no'."
+        exit 1
+    fi
+fi
+
 if [ "${BUILDTC}" = "llvm" ]; then
     BUILDDIR="build"
     TCPATH="${LLVMTC}"
-    CC="${TCPATH}/clang"
-    CXX="${TCPATH}/clang++"
-	# Xcode default toolchain doesn't include lld
-	if [ "${OS}" = "Darwin" ]; then
-		LD="${TCPATH}/ld"
-		LLVM_ENABLE_LLD="OFF"
-	else
-		LD="${TCPATH}/ld.lld"
-		LLVM_ENABLE_LLD="ON"
-	fi
+    if [ "${CCACHE}" = "yes" ]; then
+        CC="clang"
+        CXX="clang++"
+    else
+        CC="${TCPATH}/clang"
+        CXX="${TCPATH}/clang++"
+    fi
+    # Xcode default toolchain doesn't include lld
+    if [ "${OS}" = "Darwin" ]; then
+        LD="${TCPATH}/ld"
+        LLVM_ENABLE_LLD="OFF"
+    else
+        LD="${TCPATH}/ld.lld"
+        LLVM_ENABLE_LLD="ON"
+    fi
 elif [ "${BUILDTC}" = "gnu" ]; then
-	if [ "${OS}" = "Darwin" ]; then
-		echo "gcc is not supported in macOS. Exiting."
-		exit 1
-	fi
+    if [ "${OS}" = "Darwin" ]; then
+        echo "gcc is not supported in macOS. Exiting."
+        exit 1
+    fi
     BUILDDIR="build-gnu"
     TCPATH="${GNUTC}"
     TRIPLE="aarch64-linux-gnu"
-    CC="${TCPATH}/${TRIPLE}-gcc"
+    if [ "${CCACHE}" = "yes" ]; then
+        CC="gcc"
+        CXX="g++"
+    else
+        CC="${TCPATH}/${TRIPLE}-gcc"
     CXX="${TCPATH}/${TRIPLE}-g++"
+    fi
     LD="${TCPATH}/${TRIPLE}-ld"
     LLVM_ENABLE_LLD="OFF"
 else
@@ -71,15 +90,15 @@ fi
 
 # Check build type
 if [ -z "$3" ]; then
-	BUILD_TYPE="Release"
+    BUILD_TYPE="Release"
 else
-	BUILD_TYPE="$3"
+    BUILD_TYPE="$3"
 fi
 
 TARGETS="AArch64"
 PROJECTS="lld;mlir;clang;flang;llvm;clang-tools-extra"
 RUNTIMES="compiler-rt;flang-rt;openmp"
-INSTALL_PREFIX="${HOME}/.local/llvm-head"	# Change to desired installation path.
+INSTALL_PREFIX="${HOME}/.local/llvm-head"    # Change to desired installation path.
 CXX_STD="17"
 
 # Set test targets here
@@ -94,7 +113,7 @@ fi
 
 # Check if an old installation exists and erase it.
 if [ -d "${INSTALL_PREFIX}" ]; then
-    echo "Old installation found in ${INSTALL_PREFIX}. Removing it.."
+    echo "Old installation found in ${INSTALL_PREFIX}. Removing it..."
     rm -rf "${INSTALL_PREFIX}"
 fi
 mkdir "${INSTALL_PREFIX}"
@@ -107,12 +126,14 @@ mkdir -p ${BUILDDIR}
 cd ${BUILDDIR}
 
 # Execute the build. Using Ninja as default.
-ENABLE_CCACHE="`which ccache`"
-if [ ! -z "${ENABLE_CCACHE}" ]; then
-	ENABLE_CCACHE="-DCMAKE_C_COMPILER_LAUNCHER=ccache"
-	ENABLE_CCACHEXX="-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
+if [ "${CCACHE}" = "yes" ]; then
+    ENABLE_CCACHE="`which ccache`"
+    if [ ! -z "${ENABLE_CCACHE}" ]; then
+        ENABLE_CCACHE="-DCMAKE_C_COMPILER_LAUNCHER=ccache"
+        ENABLE_CCACHEXX="-DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
+    fi
 fi
-MAKEOPTS="-j12"	# Set desired parallelism.
+MAKEOPTS="-j12"    # Set desired parallelism.
 echo "--------------------------------------------------"
 echo "Starting llvm build..."
 echo "--------------------------------------------------"
@@ -149,8 +170,8 @@ cmake -G Ninja \
       -DCOMPILER_RT_BUILD_LIBFUZZER=OFF \
       -DBUILD_SHARED_LIBS=ON \
       -DBOLT_CLANG_EXE="${CC}" \
-	  "${ENABLE_CCACHE}" \
-	  "${ENABLE_CCACHEXX}" \
+      "${ENABLE_CCACHE}" \
+      "${ENABLE_CCACHEXX}" \
       "${ENABLE_BOOTSTRAP}" \
       ../llvm > _cmake_log 2>&1
 if [ $? -ne 0 ]; then
@@ -175,15 +196,15 @@ fi
 echo "Installation finished in ${INSTALL_PREFIX}."
 
 if [ ! -z "${TEST_TARGETS}" ]; then
-	echo "Testing..."
-	for i in "${TEST_TARGETS[@]}"; do
-	    echo "Running check-${i}..."
-	    ninja check-${i} > _check_${i}_log 2>&1
-	    if [ $? -ne 0 ]; then
-	        echo "Error running check-${i} tests. Check ${BUILDDIR}/_check_${i}_log for more information."
-	        exit 1
-	    fi
-	done
+    echo "Testing..."
+    for i in "${TEST_TARGETS[@]}"; do
+        echo "Running check-${i}..."
+        ninja check-${i} > _check_${i}_log 2>&1
+        if [ $? -ne 0 ]; then
+            echo "Error running check-${i} tests. Check ${BUILDDIR}/_check_${i}_log for more information."
+            exit 1
+        fi
+    done
 fi
 
 exit 0
